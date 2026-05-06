@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Mini Zoom — Sign Language</title>
+  <style>
+    body { margin:0; font-family:Arial; background:#0f0f0f; color:white; }
+
+    #home {
+      height:100vh;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      align-items:center;
+      gap:10px;
+    }
+
+    input {
+      padding:10px;
+      border-radius:6px;
+      border:none;
+    }
+
+    .homeBtn {
+      padding:10px 14px;
+      border-radius:8px;
+      border:none;
+      cursor:pointer;
+      background:#2ecc71;
+      color:black;
+      font-weight:bold;
+    }
+
+    #topBar {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      padding:12px 20px;
+      background:#1f1f1f;
+      border-bottom:1px solid #333;
+    }
+
+    #participants { font-size:13px; opacity:0.7; }
+
+    #copyStatus {
+      margin-left:10px;
+      color:#2ecc71;
+      opacity:0;
+      transition:0.3s;
+    }
+
+    #controls {
+      position:fixed;
+      bottom:0;
+      width:100%;
+      background:#1f1f1f;
+      display:flex;
+      justify-content:center;
+      gap:15px;
+      padding:12px;
+    }
+
+    button {
+      padding:10px 14px;
+      border-radius:8px;
+      border:none;
+      cursor:pointer;
+      font-size:14px;
+    }
+
+    .active   { background:#2ecc71; color:black; }
+    .inactive { background:#e74c3c; color:white; }
+    .normal   { background:#333;    color:white; }
+    .ai-on    { background:#3498db; color:white; font-weight:bold; }
+    .ai-off   { background:#555;    color:#aaa; }
+
+    #videos {
+      display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(250px,1fr));
+      gap:10px;
+      padding:15px;
+      margin-bottom:80px;
+    }
+
+    .video-container {
+      border-radius:12px;
+      overflow:hidden;
+      background:black;
+      position:relative;
+    }
+
+    .username-label {
+      position:absolute;
+      bottom:5px;
+      left:8px;
+      background:rgba(0,0,0,0.6);
+      padding:3px 6px;
+      border-radius:5px;
+      font-size:12px;
+    }
+
+    /* TTS Controls panel */
+    #tts-controls {
+      position:fixed;
+      top: 60px;
+      right: 15px;
+      background:#1f1f1f;
+      border:1px solid #333;
+      border-radius:10px;
+      padding:12px 16px;
+      z-index:100;
+      font-size:13px;
+      min-width:200px;
+    }
+    #tts-controls h4 { margin:0 0 10px 0; color:#2ecc71; font-size:13px; }
+    #tts-controls label { display:block; margin:6px 0 2px; color:#aaa; font-size:11px; }
+    #tts-controls input[type=range] { width:100%; accent-color:#2ecc71; }
+    #tts-controls select { width:100%; padding:4px; border-radius:5px; border:none; background:#333; color:white; font-size:12px; }
+
+    /* Subtitle shown on video */
+    .subtitle {
+      position:absolute;
+      top:8px;
+      left:50%;
+      transform:translateX(-50%);
+      background:rgba(0,0,0,0.75);
+      padding:5px 12px;
+      border-radius:6px;
+      font-size:15px;
+      color:#2ecc71;
+      font-weight:bold;
+      white-space:nowrap;
+      max-width:90%;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      direction:rtl;
+      transition:opacity 0.3s;
+    }
+
+    /* AI status badge on my own video */
+    #ai-status-badge {
+      position:absolute;
+      bottom:30px;
+      right:8px;
+      background:rgba(0,0,0,0.7);
+      padding:3px 8px;
+      border-radius:5px;
+      font-size:11px;
+      color:#aaa;
+    }
+    #ai-status-badge.signing  { color:#f1c40f; }
+    #ai-status-badge.complete { color:#2ecc71; }
+
+    video { width:100%; display:block; }
+  </style>
+</head>
+
+<body>
+
+<!-- HOME SCREEN -->
+<div id="home">
+  <h2>Mini Zoom — Sign Language</h2>
+  <input id="usernameInput" placeholder="Enter your name">
+  <input id="roomInput" placeholder="Enter room name">
+  <button class="homeBtn" onclick="joinRoom()">Start / Join Meeting</button>
+</div>
+
+<!-- CALL UI -->
+<div id="callUI" style="display:none;">
+  <div id="topBar">
+    <div id="roomName"></div>
+    <div>
+      <span id="participants">0 participants</span>
+      <span id="copyStatus">✔ Link copied</span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button id="aiBtn" class="ai-on" onclick="toggleAI()">🤟 Sign ON</button>
+      <button class="normal" onclick="copyLink()">Copy Link</button>
+    </div>
+  </div>
+
+  <!-- TTS VOICE CONTROLS -->
+  <div id="tts-controls">
+    <h4>🔊 Voice Controls</h4>
+    <label>Speed: <span id="rateVal">Normal</span></label>
+    <input type="range" id="ttsRate" min="-2" max="2" step="0.5" value="0"
+      oninput="document.getElementById('rateVal').innerText=this.value>0?'+'+this.value:this.value">
+
+    <label>Pitch: <span id="pitchVal">Normal</span></label>
+    <input type="range" id="ttsPitch" min="-2" max="2" step="0.5" value="0"
+      oninput="document.getElementById('pitchVal').innerText=this.value>0?'+'+this.value:this.value">
+
+    <label>Volume: <span id="volVal">1.0</span></label>
+    <input type="range" id="ttsVol" min="0" max="1" step="0.1" value="1.0"
+      oninput="document.getElementById('volVal').innerText=this.value">
+
+    <label>Voice:</label>
+    <select id="ttsVoice">
+      <option value="female">Salma (Female 🇪🇬)</option>
+      <option value="male">Shakir (Male 🇪🇬)</option>
+    </select>
+  </div>
+
+  <div id="videos"></div>
+
+  <div id="controls">
+    <button id="micBtn" class="active" onclick="toggleMic()">Mic</button>
+    <button id="camBtn" class="active" onclick="toggleCamera()">Camera</button>
+    <button class="normal" onclick="leaveCall()">Leave</button>
+  </div>
+</div>
+
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+// const AI_SERVER = "http://localhost:5001";
+
+// To this:
+const AI_SERVER = "https://earflap-outing-aflutter.ngrok-free.dev";
+
+const socket = io();
+const peer   = new Peer();
+
+const videoGrid = document.getElementById("videos");
+
+let ROOM_ID    = null;
+let USERNAME   = null;
+let myStream;
+let myPeerId;
+let aiEnabled  = true;
+let aiInterval = null;
+
+// ============================================================
+// AUDIO UNLOCK (Safari)
+// ============================================================
+let audioCtx      = null;
+let audioUnlocked = false;
+
+function unlockAudio() {
+  if (audioUnlocked) return;
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const buf = audioCtx.createBuffer(1, 1, 22050);
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.connect(audioCtx.destination);
+    src.start(0);
+    audioUnlocked = true;
+    console.log("🔊 Audio unlocked");
+  } catch(e) {
+    console.log("Audio unlock error:", e);
+  }
+}
+
+document.addEventListener("click",      unlockAudio, { once: false });
+document.addEventListener("touchstart", unlockAudio, { once: false });
+
+const peers = {};
+const users = {};
+
+// ============================================================
+// GET CAMERA
+// ============================================================
+navigator.mediaDevices.getUserMedia({
+  video: true,
+  audio: {
+    echoCancellation: true,
+    noiseSuppression: true,
+    sampleRate: 44100
+  }
+}).then(stream => { myStream = stream; });
+
+peer.on("open", id => { myPeerId = id; });
+
+// ============================================================
+// JOIN
+// ============================================================
+function joinRoom() {
+  unlockAudio();
+  const room     = document.getElementById("roomInput").value.trim();
+  const username = document.getElementById("usernameInput").value.trim();
+  if (!room || !username) return;
+
+  ROOM_ID  = room;
+  USERNAME = username;
+  users[myPeerId] = USERNAME;
+
+  document.getElementById("home").style.display   = "none";
+  document.getElementById("callUI").style.display = "block";
+  document.getElementById("roomName").innerText   = "Room: " + ROOM_ID;
+
+  addVideo(myStream, "me", USERNAME, true);
+
+  socket.emit("join-room", { roomId: ROOM_ID, peerId: myPeerId, username: USERNAME });
+}
+
+// ============================================================
+// PEER CALLS
+// ============================================================
+peer.on("call", call => {
+  call.answer(myStream);
+  call.on("stream", stream => {
+    const name = users[call.peer] || "User";
+    addVideo(stream, call.peer, name);
+  });
+  call.on("close", () => removeVideo(call.peer));
+  peers[call.peer] = call;
+});
+
+socket.on("user-connected", data => {
+  users[data.peerId] = data.username;
+  if (data.peerId === myPeerId) return;
+
+  const call = peer.call(data.peerId, myStream);
+  call.on("stream", stream => addVideo(stream, data.peerId, data.username));
+  call.on("close",  () => removeVideo(data.peerId));
+  peers[data.peerId] = call;
+});
+
+socket.on("user-disconnected", id => {
+  if (peers[id]) { peers[id].close(); delete peers[id]; }
+  removeVideo(id);
+  fetch(`${AI_SERVER}/reset_peer`, {
+    method:  "POST",
+    headers: {"Content-Type":"application/json"},
+    body:    JSON.stringify({ peerId: id })
+  }).catch(() => {});
+});
+
+socket.on("participants-count", count => {
+  document.getElementById("participants").innerText = count + " participants";
+});
+
+// ============================================================
+// RECEIVE SUBTITLE FROM ANOTHER PARTICIPANT
+// ============================================================
+socket.on("receive-message", data => {
+  const { peerId, text, audio } = data;
+  const container = document.getElementById(peerId);
+  if (!container) return;
+  showSubtitle(container, text);
+  if (audio) playAudio(audio);
+});
+
+// ============================================================
+// ADD VIDEO TILE
+// ============================================================
+function addVideo(stream, id, username, mute = false) {
+  if (document.getElementById(id)) return;
+
+  const div = document.createElement("div");
+  div.className = "video-container";
+  div.id = id;
+
+  const video = document.createElement("video");
+  video.srcObject   = stream;
+  video.autoplay    = true;
+  video.playsInline = true;
+  video.muted       = !!mute;
+  setTimeout(() => {
+    video.play().catch(e => console.log("Video play error:", e));
+  }, 300);
+
+  const name = document.createElement("div");
+  name.className = "username-label";
+  name.innerText = username;
+
+  div.appendChild(video);
+  div.appendChild(name);
+  videoGrid.appendChild(div);
+
+  if (id === "me") {
+    startAICapture(video, div);
+  }
+}
+
+// ============================================================
+// AI FRAME CAPTURE
+// ============================================================
+// FIX: Use a fixed capture canvas of 640x480 so MediaPipe always
+// gets a consistent resolution regardless of the webcam resolution.
+// This matches what sentence.py uses and avoids landmark drift.
+const CAPTURE_W = 640;
+const CAPTURE_H = 480;
+const canvas    = document.createElement("canvas");
+canvas.width    = CAPTURE_W;
+canvas.height   = CAPTURE_H;
+const ctx       = canvas.getContext("2d");
+
+// FIX: Track whether a request is already in flight so we never
+// send a new frame while the previous one is still being processed.
+// This stops the server from receiving overlapping frames which
+// confused the motion detector and caused wrong predictions.
+let aiRequestInFlight = false;
+
+function startAICapture(videoEl, containerDiv) {
+  const badge = document.createElement("div");
+  badge.id      = "ai-status-badge";
+  badge.innerText = "🤟 AI ready";
+  containerDiv.appendChild(badge);
+
+  // Send a frame every 100ms (~10 fps)
+  aiInterval = setInterval(async () => {
+    if (!aiEnabled) return;
+    if (!videoEl.videoWidth) return;
+
+    // FIX: Skip this tick if the previous request hasn't finished yet.
+    // Without this, frames pile up and the server gets confused about
+    // the order of hand positions, causing wrong motion detection.
+    if (aiRequestInFlight) return;
+
+    // FIX: Draw video into fixed 640x480 canvas.
+    // Old code used the raw webcam resolution (e.g. 1280x720) which
+    // made the JPEG much larger and slower to transfer, AND gave
+    // MediaPipe a higher-res image than it was trained on.
+    ctx.drawImage(videoEl, 0, 0, CAPTURE_W, CAPTURE_H);
+
+    // FIX: JPEG quality raised from 0.7 → 0.92.
+    // Higher quality = better finger landmark detection by MediaPipe.
+    // Lower quality was losing fine hand details and causing wrong predictions.
+    const frame = canvas.toDataURL("image/jpeg", 0.92);
+
+    aiRequestInFlight = true;
+    try {
+      const resp = await fetch(`${AI_SERVER}/process_frame`, {
+        method:  "POST",
+        headers: {"Content-Type": "application/json"},
+        body:    JSON.stringify({ peerId: myPeerId, frame, ...getTTSSettings() })
+      });
+
+      if (!resp.ok) return;
+      const result = await resp.json();
+
+      // Update badge
+      const b = document.getElementById("ai-status-badge");
+      if (b) {
+        if (result.is_signing) {
+          b.className = "signing";
+          b.innerText = `✍️ Signing… ${result.confidence}%`;
+        } else if (result.status === "complete") {
+          b.className = "complete";
+          b.innerText = `✅ Done`;
+        } else {
+          b.className = "";
+          b.innerText = `🤟 AI ready`;
+        }
+      }
+
+      // When a sign is complete → broadcast
+      if (result.text) {
+        const myContainer = document.getElementById("me");
+        if (myContainer) showSubtitle(myContainer, result.text);
+        if (result.audio) playAudio(result.audio);
+        socket.emit("send-message", {
+          peerId: myPeerId,
+          text:   result.text,
+          audio:  result.audio
+        });
+      }
+    } catch(e) {
+      // AI server unreachable — silently skip
+    } finally {
+      // Always release the lock so the next frame can be sent
+      aiRequestInFlight = false;
+    }
+  }, 100);
+}
+
+// ============================================================
+// SUBTITLE DISPLAY
+// ============================================================
+function showSubtitle(container, text) {
+  let sub = container.querySelector(".subtitle");
+  if (!sub) {
+    sub = document.createElement("div");
+    sub.className = "subtitle";
+    container.appendChild(sub);
+  }
+  sub.innerText       = text;
+  sub.style.opacity   = "1";
+  clearTimeout(sub._fadeTimer);
+  sub._fadeTimer = setTimeout(() => { sub.style.opacity = "0"; }, 4000);
+}
+
+// ============================================================
+// AUDIO PLAYBACK
+// ============================================================
+function playAudio(base64mp3) {
+  if (!base64mp3) return;
+  const vol = parseFloat(document.getElementById("ttsVol")?.value || 1.0);
+
+  if (audioCtx) {
+    try {
+      const binary = atob(base64mp3);
+      const bytes  = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+      audioCtx.decodeAudioData(bytes.buffer, buffer => {
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.value = vol;
+        gainNode.connect(audioCtx.destination);
+        const src = audioCtx.createBufferSource();
+        src.buffer = buffer;
+        src.connect(gainNode);
+        src.start(0);
+      });
+      return;
+    } catch(e) {
+      console.log("AudioContext play error:", e);
+    }
+  }
+
+  try {
+    const audio = new Audio("data:audio/mp3;base64," + base64mp3);
+    audio.volume = vol;
+    audio.play().catch(e => console.log("Audio play error:", e));
+  } catch(e) {
+    console.log("Audio element error:", e);
+  }
+}
+
+// ============================================================
+// TTS SETTINGS
+// ============================================================
+function getTTSSettings() {
+  const rateVal  = parseFloat(document.getElementById("ttsRate")?.value  || 0);
+  const pitchVal = parseFloat(document.getElementById("ttsPitch")?.value || 0);
+  const voice    = document.getElementById("ttsVoice")?.value || "female";
+
+  const rateSign  = rateVal  >= 0 ? "+" : "";
+  const pitchSign = pitchVal >= 0 ? "+" : "";
+
+  return {
+    voice:  voice,
+    rate:   rateSign  + (rateVal  * 50).toFixed(0) + "%",
+    pitch:  pitchSign + (pitchVal * 50).toFixed(0) + "Hz",
+    volume: "+0%"
+  };
+}
+
+// ============================================================
+// AI TOGGLE
+// ============================================================
+function toggleAI() {
+  aiEnabled = !aiEnabled;
+  const btn = document.getElementById("aiBtn");
+  btn.className = aiEnabled ? "ai-on" : "ai-off";
+  btn.innerText = aiEnabled ? "🤟 Sign ON" : "🤟 Sign OFF";
+  if (!aiEnabled) {
+    const b = document.getElementById("ai-status-badge");
+    if (b) { b.className = ""; b.innerText = "🤟 AI paused"; }
+  }
+}
+
+// ============================================================
+// CONTROLS
+// ============================================================
+function removeVideo(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+}
+
+function toggleMic() {
+  const track = myStream.getAudioTracks()[0];
+  track.enabled = !track.enabled;
+  document.getElementById("micBtn").className = track.enabled ? "active" : "inactive";
+}
+
+function toggleCamera() {
+  const track = myStream.getVideoTracks()[0];
+  track.enabled = !track.enabled;
+  document.getElementById("camBtn").className = track.enabled ? "active" : "inactive";
+}
+
+function copyLink() {
+  navigator.clipboard.writeText(window.location.href);
+  const el = document.getElementById("copyStatus");
+  el.style.opacity = 1;
+  setTimeout(() => el.style.opacity = 0, 1500);
+}
+
+function leaveCall() {
+  if (aiInterval) clearInterval(aiInterval);
+
+  fetch(`${AI_SERVER}/reset_peer`, {
+    method:  "POST",
+    headers: {"Content-Type": "application/json"},
+    body:    JSON.stringify({ peerId: myPeerId })
+  }).catch(() => {});
+
+  socket.emit("leave-room");
+  setTimeout(() => {
+    myStream.getTracks().forEach(t => t.stop());
+    Object.values(peers).forEach(c => c.close());
+    socket.disconnect();
+    peer.destroy();
+    window.location.href = "/";
+  }, 200);
+}
+</script>
+</body>
+</html>
