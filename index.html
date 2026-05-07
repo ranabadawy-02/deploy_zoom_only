@@ -427,7 +427,10 @@ function startAICapture(videoEl, containerDiv) {
     try {
       const resp = await fetch(`${AI_SERVER}/process_frame`, {
         method:  "POST",
-        headers: {"Content-Type": "application/json"},
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true"
+        },
         body:    JSON.stringify({ peerId: myPeerId, frame, ...getTTSSettings() })
       });
 
